@@ -100,7 +100,11 @@ export default function App() {
 
       // --- LOGIKA MENGAMBIL DATA TOP ARTIS ---
       if (!artistDetailsMap.has(artistName)) {
-        artistDetailsMap.set(artistName, { name: artistName, followers, popularity: artistPop });
+        artistDetailsMap.set(artistName, {
+          name: artistName,
+          followers,
+          popularity: artistPop,
+        });
       } else {
         // Update jika ada data follower yang lebih tinggi di baris lain
         if (followers > artistDetailsMap.get(artistName).followers) {
@@ -295,7 +299,7 @@ export default function App() {
                 <div className="w-16 h-16 rounded-full bg-[#181818] border-2 border-white/10 flex items-center justify-center text-xl font-black text-white mb-3 group-hover:border-[#1DB954] transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)]">
                   {artist.name.substring(0, 2).toUpperCase()}
                 </div>
-                
+
                 {/* Info Artis */}
                 <h4 className="font-bold text-white text-sm truncate w-full mb-1">
                   {artist.name}
@@ -311,7 +315,8 @@ export default function App() {
                     Skor Popularitas
                   </p>
                   <p className="text-white font-bold text-sm">
-                    {artist.popularity} <span className="text-gray-500 text-xs">/ 100</span>
+                    {artist.popularity}{" "}
+                    <span className="text-gray-500 text-xs">/ 100</span>
                   </p>
                 </div>
               </div>
@@ -532,7 +537,7 @@ export default function App() {
           <div className="p-6 border-b border-white/10 bg-white/5 flex items-center gap-3">
             <span className="w-3 h-3 rounded-full bg-[#f59e0b] shadow-[0_0_8px_#f59e0b]"></span>
             <h2 className="text-xl font-bold text-white">
-              Papan Peringkat Trek (Top 15 Terpopuler)
+              Papan Peringkat (Top 15 Terpopuler)
             </h2>
           </div>
           <div className="overflow-x-auto">
