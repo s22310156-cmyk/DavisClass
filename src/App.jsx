@@ -42,7 +42,7 @@ export default function App() {
     genreBar: [],
     albumPie: [],
     scatter: [],
-    topArtists: [], // Tambahan state untuk Top Artis
+    topArtists: [],
   });
 
   useEffect(() => {
@@ -70,11 +70,11 @@ export default function App() {
   }, []);
 
   const processData = (rawData) => {
-    // Data Cleaning
+    // Data Cleaning Super Ketat (Membuang ID Spotify yang nyasar)
     const cleanData = rawData.filter((item) => {
       if (!item.track_name || !item.artist_name) return false;
-      const artist = item.artist_name.trim();
-      const isCorruptedID = /^[a-zA-Z0-9]{22}$/.test(artist);
+      const artist = item.artist_name.replace(/['"]/g, "").trim();
+      const isCorruptedID = /[a-zA-Z0-9]{20,}/.test(artist);
       return !isCorruptedID;
     });
 
@@ -82,7 +82,7 @@ export default function App() {
 
     let totalPopularity = 0;
     const artistsSet = new Set();
-    const artistDetailsMap = new Map(); // Untuk menyimpan data follower artis
+    const artistDetailsMap = new Map();
     const yearCounts = {};
     const genreCounts = {};
     const albumTypeCounts = {};
@@ -91,14 +91,13 @@ export default function App() {
     cleanData.forEach((item) => {
       const pop = parseInt(item.track_popularity) || 0;
       const dur = parseFloat(item.track_duration_min) || 0;
-      const artistName = item.artist_name.trim();
+      const artistName = item.artist_name.replace(/['"]/g, "").trim();
       const followers = parseInt(item.artist_followers) || 0;
       const artistPop = parseInt(item.artist_popularity) || 0;
 
       totalPopularity += pop;
       artistsSet.add(artistName);
 
-      // --- LOGIKA MENGAMBIL DATA TOP ARTIS ---
       if (!artistDetailsMap.has(artistName)) {
         artistDetailsMap.set(artistName, {
           name: artistName,
@@ -106,7 +105,6 @@ export default function App() {
           popularity: artistPop,
         });
       } else {
-        // Update jika ada data follower yang lebih tinggi di baris lain
         if (followers > artistDetailsMap.get(artistName).followers) {
           artistDetailsMap.get(artistName).followers = followers;
         }
@@ -142,7 +140,6 @@ export default function App() {
 
     const validLength = cleanData.length;
 
-    // Sort dan Ambil 6 Artis dengan Follower Tertinggi
     const topArtistsData = Array.from(artistDetailsMap.values())
       .sort((a, b) => b.followers - a.followers)
       .slice(0, 6);
@@ -176,11 +173,10 @@ export default function App() {
       genreBar: genreBarData,
       albumPie: albumPieData,
       scatter: scatterData,
-      topArtists: topArtistsData, // Simpan ke state
+      topArtists: topArtistsData,
     });
   };
 
-  // Fungsi utilitas untuk memformat angka jadi 1.5M atau 500K
   const formatNumber = (num) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
     if (num >= 1000) return (num / 1000).toFixed(1) + "K";
@@ -202,7 +198,7 @@ export default function App() {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-black/80 backdrop-blur-md border border-white/20 p-3 rounded-xl shadow-xl">
+        <div className="bg-[#181818] border border-[#282828] p-3 rounded-xl shadow-xl">
           <p className="text-[#1DB954] font-bold mb-1">{data.name}</p>
           <p className="text-white text-sm">Popularitas: {data.popularity}</p>
           <p className="text-white text-sm">
@@ -221,9 +217,9 @@ export default function App() {
 
       <div className="max-w-7xl mx-auto relative z-10">
         {/* --- Header --- */}
-        <div className="mb-8 bg-white/5 backdrop-blur-xl p-6 rounded-3xl border border-white/10 shadow-2xl flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="mb-8 bg-[#181818]/80 backdrop-blur-xl p-6 rounded-3xl border border-[#282828] shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-5">
-            <div className="w-14 h-14 rounded-full bg-[#1DB954]/10 border border-[#1DB954]/30 flex items-center justify-center shadow-[0_0_15px_rgba(29,185,84,0.3)]">
+            <div className="w-14 h-14 rounded-full bg-[#1DB954]/10 border border-[#1DB954]/30 flex items-center justify-center">
               <svg
                 className="w-8 h-8 text-[#1DB954]"
                 fill="currentColor"
@@ -269,54 +265,47 @@ export default function App() {
           ].map((item, index) => (
             <div
               key={index}
-              className="bg-white/5 backdrop-blur-lg p-6 rounded-3xl border border-white/10 shadow-lg hover:bg-white/10 transition duration-300 group"
+              className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg hover:border-[#1DB954]/50 transition duration-300 group"
             >
               <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">
                 {item.title}
               </p>
-              <p
-                className={`text-3xl font-black ${item.color} drop-shadow-md truncate`}
-              >
+              <p className={`text-3xl font-black ${item.color} truncate`}>
                 {item.value}
               </p>
             </div>
           ))}
         </div>
 
-        {/* --- SECTION BARU: TOP ARTIST CARDS --- */}
-        <div className="mb-8">
-          <h2 className="text-lg font-bold text-white mb-5 flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-[#1DB954] shadow-[0_0_8px_#1DB954]"></span>
+        {/* --- Top Artis Section --- */}
+        <div className="mb-10">
+          <h2 className="text-sm font-bold text-gray-200 mb-5 tracking-widest uppercase flex items-center gap-3">
+            <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span>
             Top Artis dengan Follower Terbanyak
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {chartsData.topArtists.map((artist, idx) => (
               <div
                 key={idx}
-                className="bg-white/5 backdrop-blur-md p-5 rounded-3xl border border-white/10 shadow-lg hover:bg-white/10 hover:-translate-y-1 transition duration-300 group flex flex-col items-center text-center"
+                className="bg-[#181818] p-5 rounded-2xl border border-[#282828] hover:border-[#1DB954] hover:bg-[#222222] transition-colors group flex flex-col items-center text-center"
               >
-                {/* Avatar Initial Bulat */}
-                <div className="w-16 h-16 rounded-full bg-[#181818] border-2 border-white/10 flex items-center justify-center text-xl font-black text-white mb-3 group-hover:border-[#1DB954] transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+                <div className="w-16 h-16 rounded-full bg-[#282828] flex items-center justify-center text-xl font-black text-white mb-3 group-hover:text-[#1DB954] transition-colors">
                   {artist.name.substring(0, 2).toUpperCase()}
                 </div>
-
-                {/* Info Artis */}
                 <h4 className="font-bold text-white text-sm truncate w-full mb-1">
                   {artist.name}
                 </h4>
                 <p className="text-[#1DB954] text-xs font-bold mb-4">
                   {formatNumber(artist.followers)}{" "}
-                  <span className="text-gray-400 font-normal">Followers</span>
+                  <span className="text-gray-500 font-normal">Followers</span>
                 </p>
-
-                {/* Popularity Badge */}
-                <div className="w-full bg-black/40 rounded-xl p-2 mt-auto border border-white/5">
-                  <p className="text-[9px] text-gray-400 uppercase tracking-widest mb-0.5">
+                <div className="w-full bg-[#121212] rounded-xl p-2 mt-auto border border-[#282828]">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-0.5">
                     Skor Popularitas
                   </p>
                   <p className="text-white font-bold text-sm">
                     {artist.popularity}{" "}
-                    <span className="text-gray-500 text-xs">/ 100</span>
+                    <span className="text-gray-600 text-xs">/ 100</span>
                   </p>
                 </div>
               </div>
@@ -326,9 +315,8 @@ export default function App() {
 
         {/* --- Charts Area --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <div className="lg:col-span-2 bg-white/5 backdrop-blur-lg p-6 rounded-3xl border border-white/10 shadow-xl">
-            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
-              <span className="w-3 h-3 rounded-full bg-[#1DB954] shadow-[0_0_8px_#1DB954]"></span>{" "}
+          <div className="lg:col-span-2 bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
+            <h2 className="text-sm font-bold text-gray-200 mb-6 tracking-widest uppercase">
               Tren Rilis Sepanjang Masa
             </h2>
             <div className="h-72">
@@ -336,31 +324,31 @@ export default function App() {
                 <AreaChart data={chartsData.line}>
                   <defs>
                     <linearGradient id="neonGreen" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#1DB954" stopOpacity={0.6} />
+                      <stop offset="5%" stopColor="#1DB954" stopOpacity={0.4} />
                       <stop offset="95%" stopColor="#1DB954" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid
                     strokeDasharray="3 3"
                     vertical={false}
-                    stroke="#ffffff15"
+                    stroke="#282828"
                   />
                   <XAxis
                     dataKey="year"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#9ca3af" }}
+                    tick={{ fill: "#a7a7a7", fontSize: 12 }}
                   />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#9ca3af" }}
+                    tick={{ fill: "#a7a7a7", fontSize: 12 }}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#000000CC",
-                      borderColor: "#ffffff20",
-                      borderRadius: "10px",
+                      backgroundColor: "#181818",
+                      borderColor: "#282828",
+                      borderRadius: "8px",
                       color: "#fff",
                     }}
                     itemStyle={{ color: "#1DB954" }}
@@ -369,7 +357,7 @@ export default function App() {
                     type="monotone"
                     dataKey="totalRilis"
                     stroke="#1DB954"
-                    strokeWidth={4}
+                    strokeWidth={3}
                     fill="url(#neonGreen)"
                   />
                 </AreaChart>
@@ -377,9 +365,8 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-lg p-6 rounded-3xl border border-white/10 shadow-xl">
-            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
-              <span className="w-3 h-3 rounded-full bg-[#8b5cf6] shadow-[0_0_8px_#8b5cf6]"></span>{" "}
+          <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
+            <h2 className="text-sm font-bold text-gray-200 mb-6 tracking-widest uppercase text-center">
               Format Distribusi
             </h2>
             <div className="h-72">
@@ -389,10 +376,8 @@ export default function App() {
                     data={chartsData.albumPie}
                     cx="50%"
                     cy="50%"
-                    innerRadius={70}
                     outerRadius={100}
                     stroke="none"
-                    paddingAngle={5}
                     dataKey="value"
                   >
                     {chartsData.albumPie.map((entry, index) => (
@@ -404,9 +389,9 @@ export default function App() {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#000000CC",
-                      borderColor: "#ffffff20",
-                      borderRadius: "10px",
+                      backgroundColor: "#181818",
+                      borderColor: "#282828",
+                      borderRadius: "8px",
                       color: "#fff",
                     }}
                   />
@@ -414,7 +399,7 @@ export default function App() {
                     verticalAlign="bottom"
                     height={36}
                     iconType="circle"
-                    wrapperStyle={{ color: "#fff" }}
+                    wrapperStyle={{ color: "#a7a7a7", fontSize: 12 }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -423,9 +408,8 @@ export default function App() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white/5 backdrop-blur-lg p-6 rounded-3xl border border-white/10 shadow-xl">
-            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-3">
-              <span className="w-3 h-3 rounded-full bg-[#06b6d4] shadow-[0_0_8px_#06b6d4]"></span>{" "}
+          <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
+            <h2 className="text-sm font-bold text-gray-200 mb-6 tracking-widest uppercase">
               Dominasi Genre (Top 7)
             </h2>
             <div className="h-80">
@@ -438,13 +422,13 @@ export default function App() {
                   <CartesianGrid
                     strokeDasharray="3 3"
                     horizontal={false}
-                    stroke="#ffffff15"
+                    stroke="#282828"
                   />
                   <XAxis
                     type="number"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#9ca3af" }}
+                    tick={{ fill: "#a7a7a7" }}
                   />
                   <YAxis
                     dataKey="name"
@@ -453,24 +437,24 @@ export default function App() {
                     axisLine={false}
                     tickLine={false}
                     tick={{
-                      fill: "#f3f4f6",
+                      fill: "#e5e7eb",
                       fontSize: 12,
                       textTransform: "capitalize",
                     }}
                   />
                   <Tooltip
-                    cursor={{ fill: "#ffffff10" }}
+                    cursor={{ fill: "#282828" }}
                     contentStyle={{
-                      backgroundColor: "#000000CC",
-                      borderColor: "#ffffff20",
-                      borderRadius: "10px",
+                      backgroundColor: "#181818",
+                      borderColor: "#282828",
+                      borderRadius: "8px",
                       color: "#fff",
                     }}
                   />
                   <Bar
                     dataKey="jumlah"
                     fill="#06b6d4"
-                    radius={[0, 6, 6, 0]}
+                    radius={[0, 4, 4, 0]}
                     barSize={20}
                   >
                     {chartsData.genreBar.map((entry, index) => (
@@ -485,20 +469,19 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-white/5 backdrop-blur-lg p-6 rounded-3xl border border-white/10 shadow-xl">
-            <h2 className="text-lg font-bold text-white mb-2 flex items-center gap-3">
-              <span className="w-3 h-3 rounded-full bg-[#ec4899] shadow-[0_0_8px_#ec4899]"></span>{" "}
+          <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
+            <h2 className="text-sm font-bold text-gray-200 mb-2 tracking-widest uppercase">
               Korelasi: Durasi vs Popularitas
             </h2>
-            <p className="text-xs text-gray-400 mb-4 pl-6">
-              Menganalisis pola durasi lagu hit (Sampel acak)
+            <p className="text-xs text-gray-500 mb-4 pl-6">
+              Analisis pola durasi hit lagu (Sampel acak)
             </p>
             <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart
                   margin={{ top: 20, right: 20, bottom: 20, left: -20 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff15" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#282828" />
                   <XAxis
                     type="number"
                     dataKey="duration"
@@ -506,7 +489,7 @@ export default function App() {
                     unit=" mnt"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#9ca3af" }}
+                    tick={{ fill: "#a7a7a7" }}
                   />
                   <YAxis
                     type="number"
@@ -514,7 +497,7 @@ export default function App() {
                     name="Popularitas"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fill: "#9ca3af" }}
+                    tick={{ fill: "#a7a7a7" }}
                   />
                   <ZAxis type="number" range={[50, 50]} />
                   <Tooltip
@@ -532,18 +515,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- Papan Peringkat Tabel Glassmorphism --- */}
-        <div className="bg-white/5 backdrop-blur-lg rounded-3xl border border-white/10 shadow-xl overflow-hidden mb-10">
-          <div className="p-6 border-b border-white/10 bg-white/5 flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-[#f59e0b] shadow-[0_0_8px_#f59e0b]"></span>
-            <h2 className="text-xl font-bold text-white">
+        {/* --- Papan Peringkat Tabel --- */}
+        <div className="bg-[#181818] rounded-2xl border border-[#282828] shadow-xl overflow-hidden mb-10">
+          <div className="p-6 border-b border-[#282828] flex items-center gap-3">
+            <h2 className="text-sm font-bold text-gray-200 tracking-widest uppercase">
               Papan Peringkat (Top 15 Terpopuler)
             </h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
-                <tr className="bg-black/20 text-gray-400">
+                <tr className="bg-[#121212] text-gray-400">
                   <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs w-10 text-center">
                     #
                   </th>
@@ -564,7 +546,7 @@ export default function App() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-[#282828]">
                 {data
                   .sort(
                     (a, b) =>
@@ -576,14 +558,13 @@ export default function App() {
                     const pop = parseInt(row.track_popularity) || 0;
                     const isExplicit =
                       row.explicit === "TRUE" || row.explicit === "true";
-
                     return (
                       <tr
                         key={index}
-                        className="hover:bg-white/5 transition-colors group"
+                        className="hover:bg-[#222222] transition-colors group"
                       >
                         <td className="px-6 py-4 text-center">
-                          <span className="text-gray-500 font-bold text-lg">
+                          <span className="text-[#a7a7a7] font-bold text-lg">
                             {index + 1}
                           </span>
                         </td>
@@ -591,7 +572,7 @@ export default function App() {
                           <p className="font-bold text-white truncate max-w-[250px]">
                             {row.track_name}
                           </p>
-                          <p className="text-xs text-gray-400 truncate max-w-[250px]">
+                          <p className="text-xs text-gray-500 truncate max-w-[250px]">
                             {row.album_name}
                           </p>
                         </td>
@@ -603,7 +584,7 @@ export default function App() {
                             <span className="text-white font-bold w-6">
                               {pop}
                             </span>
-                            <div className="w-16 h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div className="w-16 h-1.5 bg-[#282828] rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-[#1DB954]"
                                 style={{ width: `${pop}%` }}
@@ -611,16 +592,16 @@ export default function App() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-gray-400">
+                        <td className="px-6 py-4 text-[#a7a7a7]">
                           {parseFloat(row.track_duration_min).toFixed(2)} mnt
                         </td>
                         <td className="px-6 py-4">
                           {isExplicit ? (
-                            <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                            <span className="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
                               Explicit
                             </span>
                           ) : (
-                            <span className="bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                            <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
                               Clean
                             </span>
                           )}
@@ -630,6 +611,120 @@ export default function App() {
                   })}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        {/* --- SEKSI BARU: EXECUTIVE INSIGHTS (DIPINDAH KE BAWAH) --- */}
+        <div className="mb-10">
+          <h2 className="text-sm font-bold text-gray-200 mb-5 tracking-widest uppercase flex items-center gap-3">
+            <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span>
+            Analitik Strategis & Insight Data
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Card Insight 1 */}
+            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group flex flex-col">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-10 h-10 rounded-full bg-[#1DB954]/10 flex items-center justify-center border border-[#1DB954]/20 group-hover:bg-[#1DB954]/20 transition-colors">
+                  <svg
+                    className="w-5 h-5 text-[#1DB954]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                    ></path>
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">
+                    Insight Utama
+                  </p>
+                  <h3 className="font-bold text-white text-sm">
+                    Dominasi Taylor Swift & Pop
+                  </h3>
+                </div>
+              </div>
+              <p className="text-gray-400 text-xs leading-relaxed">
+                Taylor Swift adalah market leader dengan jumlah pengikut
+                tertinggi (145.5M) dan skor popularitas sempurna (100/100). Hal
+                ini secara langsung mengerek genre Pop dan Country menjadi
+                kategori paling dominan dalam ekosistem data ini.
+              </p>
+            </div>
+
+            {/* Card Insight 2 */}
+            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group flex flex-col">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-10 h-10 rounded-full bg-[#06b6d4]/10 flex items-center justify-center border border-[#06b6d4]/20 group-hover:bg-[#06b6d4]/20 transition-colors">
+                  <svg
+                    className="w-5 h-5 text-[#06b6d4]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                    ></path>
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">
+                    Tren Data
+                  </p>
+                  <h3 className="font-bold text-white text-sm">
+                    Pertumbuhan Eksponensial
+                  </h3>
+                </div>
+              </div>
+              <p className="text-gray-400 text-xs leading-relaxed">
+                Grafik tren rilis menunjukkan lonjakan produksi musik yang
+                drastis pasca-2010. Hal ini menandakan era digitalisasi
+                streaming di mana volume lagu baru yang masuk ke platform
+                meningkat ribuan persen dibanding dekade sebelumnya.
+              </p>
+            </div>
+
+            {/* Card Insight 3 */}
+            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group flex flex-col">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-10 h-10 rounded-full bg-[#ec4899]/10 flex items-center justify-center border border-[#ec4899]/20 group-hover:bg-[#ec4899]/20 transition-colors">
+                  <svg
+                    className="w-5 h-5 text-[#ec4899]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    ></path>
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5">
+                    Rekomendasi Produksi
+                  </p>
+                  <h3 className="font-bold text-white text-sm">
+                    Optimasi Durasi 3 Menit
+                  </h3>
+                </div>
+              </div>
+              <p className="text-gray-400 text-xs leading-relaxed">
+                Untuk memaksimalkan peluang lagu menjadi "hits", targetkan
+                durasi lagu di rentang 3.00 hingga 3.50 menit. Scatter plot
+                visualisasi mengonfirmasi bahwa konsentrasi popularitas
+                tertinggi menumpuk tajam pada rentang durasi tersebut.
+              </p>
+            </div>
           </div>
         </div>
       </div>
