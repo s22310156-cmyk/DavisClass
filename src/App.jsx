@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Papa from "papaparse";
 import {
   AreaChart,
@@ -29,8 +29,29 @@ const COLORS = [
 ];
 
 export default function App() {
+  // --- STATE DATA ---
+  const [allCleanData, setAllCleanData] = useState([]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // --- STATE FILTER ---
+  const [filterCategory, setFilterCategory] = useState("All");
+  const [filterYear, setFilterYear] = useState("All");
+  const [availableYears, setAvailableYears] = useState([]);
+
+  // --- STATE CHATBOT AI (MODEL MELAYANG/DRAWER) ---
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    {
+      role: "ai",
+      text: "✨ Halo! Saya AI Assistant DataPulse. Ada yang ingin dianalisis dari data Spotify ini?",
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const chatEndRef = useRef(null);
+
+  // --- STATE CHART & KPI ---
   const [kpi, setKpi] = useState({
     total: 0,
     uniqueArtists: 0,
@@ -45,6 +66,7 @@ export default function App() {
     topArtists: [],
   });
 
+  // 1. FETCH DATA
   useEffect(() => {
     fetch("/spotify_data clean.csv")
       .then((response) => {
@@ -58,7 +80,20 @@ export default function App() {
           quoteChar: '"',
           escapeChar: '"',
           complete: (results) => {
-            processData(results.data);
+            const cleaned = results.data.filter((item) => {
+              if (!item.track_name || !item.artist_name) return false;
+              const artist = item.artist_name.replace(/['"]/g, "").trim();
+              return !/[a-zA-Z0-9]{20,}/.test(artist); // Membuang ID error
+            });
+
+            setAllCleanData(cleaned);
+
+            const years = new Set();
+            cleaned.forEach((item) => {
+              if (item.album_release_date)
+                years.add(item.album_release_date.substring(0, 4));
+            });
+            setAvailableYears(Array.from(years).sort((a, b) => b - a));
             setLoading(false);
           },
         });
@@ -69,17 +104,25 @@ export default function App() {
       });
   }, []);
 
-  const processData = (rawData) => {
-    // Data Cleaning Super Ketat (Membuang ID Spotify yang nyasar)
-    const cleanData = rawData.filter((item) => {
-      if (!item.track_name || !item.artist_name) return false;
-      const artist = item.artist_name.replace(/['"]/g, "").trim();
-      const isCorruptedID = /[a-zA-Z0-9]{20,}/.test(artist);
-      return !isCorruptedID;
-    });
+  // 2. PROSES FILTERING & AGREGASI
+  useEffect(() => {
+    if (allCleanData.length === 0) return;
 
+    let filtered = allCleanData;
+    if (filterCategory !== "All")
+      filtered = filtered.filter((item) => item.album_type === filterCategory);
+    if (filterYear !== "All")
+      filtered = filtered.filter(
+        (item) =>
+          item.album_release_date &&
+          item.album_release_date.startsWith(filterYear),
+      );
+
+    processData(filtered);
+  }, [allCleanData, filterCategory, filterYear]);
+
+  const processData = (cleanData) => {
     setData(cleanData);
-
     let totalPopularity = 0;
     const artistsSet = new Set();
     const artistDetailsMap = new Map();
@@ -93,7 +136,6 @@ export default function App() {
       const dur = parseFloat(item.track_duration_min) || 0;
       const artistName = item.artist_name.replace(/['"]/g, "").trim();
       const followers = parseInt(item.artist_followers) || 0;
-      const artistPop = parseInt(item.artist_popularity) || 0;
 
       totalPopularity += pop;
       artistsSet.add(artistName);
@@ -102,59 +144,47 @@ export default function App() {
         artistDetailsMap.set(artistName, {
           name: artistName,
           followers,
-          popularity: artistPop,
+          popularity: parseInt(item.artist_popularity) || 0,
         });
-      } else {
-        if (followers > artistDetailsMap.get(artistName).followers) {
-          artistDetailsMap.get(artistName).followers = followers;
-        }
+      } else if (followers > artistDetailsMap.get(artistName).followers) {
+        artistDetailsMap.get(artistName).followers = followers;
       }
 
       if (item.album_release_date) {
         const year = item.album_release_date.substring(0, 4);
-        if (year >= 1950 && year <= 2026) {
+        if (year >= 1950 && year <= 2026)
           yearCounts[year] = (yearCounts[year] || 0) + 1;
-        }
       }
 
-      const aType = item.album_type || "Unknown";
-      albumTypeCounts[aType] = (albumTypeCounts[aType] || 0) + 1;
+      albumTypeCounts[item.album_type || "Unknown"] =
+        (albumTypeCounts[item.album_type || "Unknown"] || 0) + 1;
 
       if (item.artist_genres && item.artist_genres !== "N/A") {
-        const genres = item.artist_genres
-          .split(",")
-          .map((g) => g.trim().toLowerCase());
-        genres.forEach((g) => {
-          if (g) genreCounts[g] = (genreCounts[g] || 0) + 1;
+        item.artist_genres.split(",").forEach((g) => {
+          const genre = g.trim().toLowerCase();
+          if (genre) genreCounts[genre] = (genreCounts[genre] || 0) + 1;
         });
       }
 
-      if (Math.random() < 0.1 && pop > 0 && dur > 0 && dur < 10) {
+      if (Math.random() < 0.1 && pop > 0 && dur > 0 && dur < 10)
         scatterData.push({
           popularity: pop,
           duration: dur,
           name: item.track_name,
         });
-      }
     });
 
     const validLength = cleanData.length;
-
     const topArtistsData = Array.from(artistDetailsMap.values())
       .sort((a, b) => b.followers - a.followers)
       .slice(0, 6);
-
     const lineData = Object.keys(yearCounts)
       .map((year) => ({ year, totalRilis: yearCounts[year] }))
       .sort((a, b) => a.year.localeCompare(b.year));
-
     const genreBarData = Object.keys(genreCounts)
       .map((name) => ({ name, jumlah: genreCounts[name] }))
       .sort((a, b) => b.jumlah - a.jumlah)
       .slice(0, 7);
-
-    const topGenreText = genreBarData.length > 0 ? genreBarData[0].name : "N/A";
-
     const albumPieData = Object.keys(albumTypeCounts).map((type) => ({
       name: type.charAt(0).toUpperCase() + type.slice(1),
       value: albumTypeCounts[type],
@@ -165,9 +195,11 @@ export default function App() {
       uniqueArtists: artistsSet.size,
       avgPopularity:
         validLength > 0 ? (totalPopularity / validLength).toFixed(1) : 0,
-      topGenre: topGenreText.replace(/\b\w/g, (l) => l.toUpperCase()),
+      topGenre:
+        genreBarData.length > 0
+          ? genreBarData[0].name.replace(/\b\w/g, (l) => l.toUpperCase())
+          : "N/A",
     });
-
     setChartsData({
       line: lineData,
       genreBar: genreBarData,
@@ -176,29 +208,101 @@ export default function App() {
       topArtists: topArtistsData,
     });
   };
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
 
-  const formatNumber = (num) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
-    if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-    return num;
+    // API Key Anda
+    // Panggil API Key dari file .env
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+    const userMessage = chatInput;
+    setMessages((prev) => [...prev, { role: "user", text: userMessage }]);
+    setChatInput("");
+    setIsAiTyping(true);
+
+    try {
+      // 🚀 KOMBINASI EMAS: v1beta + gemini-1.5-flash
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `Anda adalah DataPulse AI Assistant. 
+              Konteks: Total Lagu ${kpi.total}, Popularitas rata-rata ${kpi.avgPopularity}.
+              Pertanyaan: "${userMessage}"
+              Jawab singkat, ramah, dan analitis dalam Bahasa Indonesia.`,
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      const result = await response.json();
+
+      // Tangkap jika Google mengembalikan pesan error di dalam JSON-nya
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      const aiText = result.candidates[0].content.parts[0].text;
+      setMessages((prev) => [...prev, { role: "ai", text: aiText }]);
+    } catch (error) {
+      console.error("Fetch Error Detail:", error);
+
+      // 🕵️ FITUR DEBUG OTOMATIS: Bertanya ke server Google model apa yang diizinkan
+      fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      )
+        .then((res) => res.json())
+        .then((data) => {
+          console.log("=== DAFTAR MODEL YANG DIIZINKAN UNTUK API KEY INI ===");
+          console.log(data.models.map((m) => m.name));
+        })
+        .catch((err) => console.log("Gagal mengambil daftar model", err));
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text: `⚠️ Error: ${error.message}. Silakan tekan tombol F12 di browser, buka tab "Console", dan lihat nama model apa saja yang diizinkan oleh Google untuk Anda.`,
+        },
+      ]);
+    } finally {
+      setIsAiTyping(false);
+    }
   };
+  // Auto Scroll Chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isChatOpen]);
 
-  if (loading) {
+  const formatNumber = (num) =>
+    num >= 1000000
+      ? (num / 1000000).toFixed(1) + "M"
+      : num >= 1000
+        ? (num / 1000).toFixed(1) + "K"
+        : num;
+
+  if (loading)
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white">
-        <div className="w-16 h-16 border-4 border-white/10 border-t-[#1DB954] rounded-full animate-spin mb-6 shadow-[0_0_15px_#1DB954]"></div>
+        <div className="w-16 h-16 border-4 border-[#1DB954]/20 border-t-[#1DB954] rounded-full animate-spin mb-6"></div>
         <p className="text-xl font-bold tracking-widest text-[#1DB954] animate-pulse">
           MEMUAT TRACKS...
         </p>
       </div>
     );
-  }
 
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-[#181818] border border-[#282828] p-3 rounded-xl shadow-xl">
+        <div className="bg-[#181818] border border-[#282828] p-3 rounded-xl shadow-xl z-50">
           <p className="text-[#1DB954] font-bold mb-1">{data.name}</p>
           <p className="text-white text-sm">Popularitas: {data.popularity}</p>
           <p className="text-white text-sm">
@@ -211,15 +315,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white p-4 md:p-8 font-sans relative overflow-hidden">
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#1DB954]/20 rounded-full blur-[120px] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-violet-600/15 rounded-full blur-[150px] pointer-events-none"></div>
+    <div className="min-h-screen bg-[#09090b] text-white p-4 md:p-8 font-sans relative overflow-x-hidden">
+      {/* Background Ambience */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-[#1DB954]/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-violet-600/15 rounded-full blur-[150px] pointer-events-none z-0"></div>
 
+      {/* --- KONTEN UTAMA DASHBOARD --- */}
       <div className="max-w-7xl mx-auto relative z-10">
-        {/* --- Header --- */}
-        <div className="mb-8 bg-[#181818]/80 backdrop-blur-xl p-6 rounded-3xl border border-[#282828] shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-5">
-            <div className="w-14 h-14 rounded-full bg-[#1DB954]/10 border border-[#1DB954]/30 flex items-center justify-center">
+        {/* --- HEADER & FILTER --- */}
+        <div className="mb-8 bg-[#181818]/80 backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-[#282828] shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex flex-col lg:flex-row justify-between items-start lg:items-center gap-8 relative overflow-visible">
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-[#1DB954]/20 rounded-full blur-[50px] pointer-events-none"></div>
+
+          <div className="flex items-center gap-5 relative z-10">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#1DB954]/20 to-black border border-[#1DB954]/30 flex items-center justify-center shadow-lg shadow-[#1DB954]/10 shrink-0">
               <svg
                 className="w-8 h-8 text-[#1DB954]"
                 fill="currentColor"
@@ -229,13 +337,40 @@ export default function App() {
               </svg>
             </div>
             <div>
-              <h1 className="text-3xl font-extrabold tracking-tight text-white drop-shadow-md">
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white drop-shadow-md">
                 Data<span className="text-[#1DB954]">Pulse</span> Spotify
               </h1>
-              <p className="text-gray-400 font-medium text-sm mt-1">
-                Dashboard Analitik Musik Interaktif
+              <p className="text-gray-400 font-medium text-sm mt-1 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>{" "}
+                Real-time Analytics
               </p>
             </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto relative z-10">
+            <select
+              className="w-full sm:w-48 bg-[#121212]/80 border border-[#333] hover:border-[#1DB954]/50 text-gray-300 text-sm rounded-xl px-4 py-3 outline-none focus:border-[#1DB954] cursor-pointer"
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              <option value="All">Semua Kategori</option>
+              <option value="album">Album</option>
+              <option value="single">Single</option>
+              <option value="compilation">Compilation</option>
+            </select>
+
+            <select
+              className="w-full sm:w-44 bg-[#121212]/80 border border-[#333] hover:border-[#1DB954]/50 text-gray-300 text-sm rounded-xl px-4 py-3 outline-none focus:border-[#1DB954] cursor-pointer"
+              value={filterYear}
+              onChange={(e) => setFilterYear(e.target.value)}
+            >
+              <option value="All">Semua Tahun</option>
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -277,47 +412,37 @@ export default function App() {
           ))}
         </div>
 
-        {/* --- Top Artis Section --- */}
+        {/* --- Top Artis --- */}
         <div className="mb-10">
           <h2 className="text-sm font-bold text-gray-200 mb-5 tracking-widest uppercase flex items-center gap-3">
-            <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span>
-            Top Artis dengan Follower Terbanyak
+            <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span> Top
+            Artis dengan Follower Terbanyak
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {chartsData.topArtists.map((artist, idx) => (
               <div
                 key={idx}
-                className="bg-[#181818] p-5 rounded-2xl border border-[#282828] hover:border-[#1DB954] hover:bg-[#222222] transition-colors group flex flex-col items-center text-center"
+                className="bg-[#181818] p-5 rounded-2xl border border-[#282828] hover:border-[#1DB954] hover:bg-[#222222] transition-colors text-center"
               >
-                <div className="w-16 h-16 rounded-full bg-[#282828] flex items-center justify-center text-xl font-black text-white mb-3 group-hover:text-[#1DB954] transition-colors">
+                <div className="w-16 h-16 rounded-full bg-[#282828] flex items-center justify-center text-xl font-black text-white mb-3 mx-auto">
                   {artist.name.substring(0, 2).toUpperCase()}
                 </div>
                 <h4 className="font-bold text-white text-sm truncate w-full mb-1">
                   {artist.name}
                 </h4>
-                <p className="text-[#1DB954] text-xs font-bold mb-4">
-                  {formatNumber(artist.followers)}{" "}
-                  <span className="text-gray-500 font-normal">Followers</span>
+                <p className="text-[#1DB954] text-xs font-bold">
+                  {formatNumber(artist.followers)}
                 </p>
-                <div className="w-full bg-[#121212] rounded-xl p-2 mt-auto border border-[#282828]">
-                  <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-0.5">
-                    Skor Popularitas
-                  </p>
-                  <p className="text-white font-bold text-sm">
-                    {artist.popularity}{" "}
-                    <span className="text-gray-600 text-xs">/ 100</span>
-                  </p>
-                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* --- Charts Area --- */}
+        {/* --- Charts Row 1 --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="lg:col-span-2 bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
             <h2 className="text-sm font-bold text-gray-200 mb-6 tracking-widest uppercase">
-              Tren Rilis Sepanjang Masa
+              Tren Rilis
             </h2>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -364,7 +489,6 @@ export default function App() {
               </ResponsiveContainer>
             </div>
           </div>
-
           <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
             <h2 className="text-sm font-bold text-gray-200 mb-6 tracking-widest uppercase text-center">
               Format Distribusi
@@ -407,6 +531,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* --- Charts Row 2 --- */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
             <h2 className="text-sm font-bold text-gray-200 mb-6 tracking-widest uppercase">
@@ -468,14 +593,10 @@ export default function App() {
               </ResponsiveContainer>
             </div>
           </div>
-
           <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] shadow-lg">
             <h2 className="text-sm font-bold text-gray-200 mb-2 tracking-widest uppercase">
               Korelasi: Durasi vs Popularitas
             </h2>
-            <p className="text-xs text-gray-500 mb-4 pl-6">
-              Analisis pola durasi hit lagu (Sampel acak)
-            </p>
             <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart
@@ -515,34 +636,24 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- Papan Peringkat Tabel --- */}
-        <div className="bg-[#181818] rounded-2xl border border-[#282828] shadow-xl overflow-hidden mb-10">
-          <div className="p-6 border-b border-[#282828] flex items-center gap-3">
+        {/* --- Tabel Papan Peringkat --- */}
+        <div className="bg-[#181818] rounded-2xl border border-[#282828] shadow-xl overflow-hidden mb-12">
+          <div className="p-6 border-b border-[#282828]">
             <h2 className="text-sm font-bold text-gray-200 tracking-widest uppercase">
-              Papan Peringkat (Top 15 Terpopuler)
+              Papan Peringkat (Top 15)
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-[#121212] text-gray-400">
-                  <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs w-10 text-center">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[#121212] text-gray-400">
+                <tr>
+                  <th className="px-6 py-4 uppercase text-xs w-10 text-center">
                     #
                   </th>
-                  <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">
-                    Trek & Album
-                  </th>
-                  <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">
-                    Artis
-                  </th>
-                  <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">
+                  <th className="px-6 py-4 uppercase text-xs">Trek & Album</th>
+                  <th className="px-6 py-4 uppercase text-xs">Artis</th>
+                  <th className="px-6 py-4 uppercase text-xs">
                     Indeks Popularitas
-                  </th>
-                  <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">
-                    Durasi
-                  </th>
-                  <th className="px-6 py-4 font-semibold uppercase tracking-wider text-xs">
-                    Label
                   </th>
                 </tr>
               </thead>
@@ -556,8 +667,6 @@ export default function App() {
                   .slice(0, 15)
                   .map((row, index) => {
                     const pop = parseInt(row.track_popularity) || 0;
-                    const isExplicit =
-                      row.explicit === "TRUE" || row.explicit === "true";
                     return (
                       <tr
                         key={index}
@@ -571,9 +680,6 @@ export default function App() {
                         <td className="px-6 py-4">
                           <p className="font-bold text-white truncate max-w-[250px]">
                             {row.track_name}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate max-w-[250px]">
-                            {row.album_name}
                           </p>
                         </td>
                         <td className="px-6 py-4 text-gray-300 font-medium">
@@ -592,20 +698,6 @@ export default function App() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-[#a7a7a7]">
-                          {parseFloat(row.track_duration_min).toFixed(2)} mnt
-                        </td>
-                        <td className="px-6 py-4">
-                          {isExplicit ? (
-                            <span className="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
-                              Explicit
-                            </span>
-                          ) : (
-                            <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
-                              Clean
-                            </span>
-                          )}
-                        </td>
                       </tr>
                     );
                   })}
@@ -614,17 +706,16 @@ export default function App() {
           </div>
         </div>
 
-        {/* --- SEKSI BARU: EXECUTIVE INSIGHTS (DIPINDAH KE BAWAH) --- */}
-        <div className="mb-10">
+        {/* --- EXECUTIVE INSIGHTS (TETAP ADA DI BAWAH) --- */}
+        <div className="mb-24">
           <h2 className="text-sm font-bold text-gray-200 mb-5 tracking-widest uppercase flex items-center gap-3">
-            <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span>
-            Analitik Strategis & Insight Data
+            <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span> Analitik
+            Strategis & Insight Data
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Card Insight 1 */}
-            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group flex flex-col">
+            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group">
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-10 h-10 rounded-full bg-[#1DB954]/10 flex items-center justify-center border border-[#1DB954]/20 group-hover:bg-[#1DB954]/20 transition-colors">
+                <div className="w-10 h-10 rounded-full bg-[#1DB954]/10 flex items-center justify-center border border-[#1DB954]/20">
                   <svg
                     className="w-5 h-5 text-[#1DB954]"
                     fill="none"
@@ -655,11 +746,9 @@ export default function App() {
                 kategori paling dominan dalam ekosistem data ini.
               </p>
             </div>
-
-            {/* Card Insight 2 */}
-            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group flex flex-col">
+            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group">
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-10 h-10 rounded-full bg-[#06b6d4]/10 flex items-center justify-center border border-[#06b6d4]/20 group-hover:bg-[#06b6d4]/20 transition-colors">
+                <div className="w-10 h-10 rounded-full bg-[#06b6d4]/10 flex items-center justify-center border border-[#06b6d4]/20">
                   <svg
                     className="w-5 h-5 text-[#06b6d4]"
                     fill="none"
@@ -690,11 +779,9 @@ export default function App() {
                 meningkat ribuan persen dibanding dekade sebelumnya.
               </p>
             </div>
-
-            {/* Card Insight 3 */}
-            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group flex flex-col">
+            <div className="bg-[#181818] p-6 rounded-2xl border border-[#282828] hover:bg-[#222222] transition-colors group">
               <div className="flex items-center gap-4 mb-4">
-                <div className="w-10 h-10 rounded-full bg-[#ec4899]/10 flex items-center justify-center border border-[#ec4899]/20 group-hover:bg-[#ec4899]/20 transition-colors">
+                <div className="w-10 h-10 rounded-full bg-[#ec4899]/10 flex items-center justify-center border border-[#ec4899]/20">
                   <svg
                     className="w-5 h-5 text-[#ec4899]"
                     fill="none"
@@ -725,6 +812,135 @@ export default function App() {
                 tertinggi menumpuk tajam pada rentang durasi tersebut.
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* --- TOMBOL MELAYANG (FLOATING AI CHAT) --- */}
+      <button
+        onClick={() => setIsChatOpen(true)}
+        className={`fixed bottom-6 right-6 w-14 h-14 bg-[#1DB954] rounded-full shadow-[0_0_20px_rgba(29,185,84,0.5)] text-black hover:scale-110 transition-transform z-[60] ${
+          isChatOpen ? "hidden" : "flex items-center justify-center"
+        }`}
+      >
+        <svg
+          className="w-6 h-6"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+          ></path>
+        </svg>
+      </button>
+
+      {/* --- BACKGROUND OVERLAY BLUR --- */}
+      {isChatOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity"
+          onClick={() => setIsChatOpen(false)}
+        ></div>
+      )}
+
+      {/* --- SLIDE-OUT DRAWER CHAT AI --- */}
+      <div
+        className={`fixed top-0 right-0 h-full w-full sm:w-[400px] bg-[#121212] border-l border-[#282828] shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isChatOpen ? "translate-x-0" : "translate-x-full"}`}
+      >
+        <div className="bg-[#181818] border-b border-[#282828] p-5 flex justify-between items-center text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[#1DB954]/20 flex items-center justify-center text-[#1DB954]">
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.586 14.424c-.18.295-.563.387-.857.207-2.35-1.434-5.305-1.76-8.786-.963-.335.077-.67-.133-.746-.47-.077-.334.132-.67.47-.745 3.808-.87 7.076-.496 9.712 1.115.293.18.386.563.207.856zm1.268-2.838c-.225.368-.705.483-1.072.258-2.686-1.65-6.784-2.13-9.965-1.166-.413.127-.85-.106-.975-.52-.126-.413.106-.85.52-.974 3.65-1.11 8.19-.58 11.235 1.295.367.225.483.704.257 1.072zm.106-2.964C14.73 8.71 9.352 8.498 5.438 9.687c-.494.15-1.015-.128-1.166-.623-.15-.495.128-1.015.623-1.166 4.49-1.364 10.435-1.11 14.246 1.15.442.26.586.837.324 1.28-.26.442-.837.586-1.28.324z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-bold text-sm">DataPulse AI</h3>
+              <p className="text-[10px] text-[#1DB954]">Powered by Gemini</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsChatOpen(false)}
+            className="text-gray-400 hover:text-white p-2 bg-[#222222] rounded-full transition-colors mr-12"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M6 18L18 6M6 6l12 12"
+              ></path>
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-[#09090b]">
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed ${m.role === "user" ? "bg-[#1DB954] text-black rounded-tr-none font-medium" : "bg-[#181818] text-gray-200 border border-[#282828] rounded-tl-none"}`}
+              >
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {isAiTyping && (
+            <div className="flex justify-start">
+              <div className="bg-[#181818] border border-[#282828] p-4 rounded-2xl rounded-tl-none flex gap-1.5 items-center">
+                <div className="w-2 h-2 bg-[#1DB954] rounded-full animate-bounce"></div>
+                <div
+                  className="w-2 h-2 bg-[#1DB954] rounded-full animate-bounce"
+                  style={{ animationDelay: "0.1s" }}
+                ></div>
+                <div
+                  className="w-2 h-2 bg-[#1DB954] rounded-full animate-bounce"
+                  style={{ animationDelay: "0.2s" }}
+                ></div>
+              </div>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="p-4 bg-[#181818] border-t border-[#282828]">
+          <div className="relative">
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+              placeholder="Tanya AI tentang data ini..."
+              className="w-full bg-[#121212] border border-[#333] hover:border-[#1DB954]/50 text-white text-sm rounded-xl pl-4 pr-12 py-3.5 outline-none focus:border-[#1DB954] transition-all"
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={isAiTyping || !chatInput.trim()}
+              className="absolute right-2 top-2 bottom-2 bg-[#1DB954] text-black w-10 rounded-lg flex items-center justify-center hover:bg-[#1ed760] disabled:opacity-50 transition-colors"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M14 5l7 7m0 0l-7 7m7-7H3"
+                ></path>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
